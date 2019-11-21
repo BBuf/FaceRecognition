@@ -21,7 +21,7 @@ struct Bbox
 	float area;
 	bool exist;
 	float ppoint[10];
-	float regreCoord[4];
+	float regreCoord[4];     
 };
 
 struct orderScore
@@ -47,7 +47,7 @@ private:
 
 	ncnn::Net Pnet, Rnet, Onet;
 	ncnn::Mat img;
-
+	// 上面已经解释过了
 	const float nms_threshold[3] = { (float)0.5, (float)0.7, (float)0.7 };
 	const float threshold[3] = { (float)0.6, (float)0.6, (float)0.6 };
 	const float mean_vals[3] = { (float)127.5, (float)127.5, (float)127.5 };
@@ -66,12 +66,14 @@ mtcnn::mtcnn() {
 	Onet.load_model("C:\\Users\\Administrator\\Desktop\\ncnn\\mtcnn\\det3.bin");
 }
 
+// 根据Pnet的输出结果，由滑框的得分，筛选可能是人脸的滑框，并记录该框的位置、人脸坐标信息、得分以及编号
 void mtcnn::generateBbox(ncnn::Mat score, ncnn::Mat location, std::vector<Bbox>& boundingBox_, std::vector<orderScore>& bboxScore_, float scale) {
 	int stride = 2;
 	int cellsize = 12;
 	int count = 0;
-	//score p
+	//score p 判定为人脸的概率
 	float *p = score.channel(1);
+	// 人脸框回归偏移量
 	float *plocal = location.channel(0);
 	Bbox bbox;
 	orderScore order;
@@ -81,12 +83,15 @@ void mtcnn::generateBbox(ncnn::Mat score, ncnn::Mat location, std::vector<Bbox>&
 				bbox.score = *p;
 				order.score = *p;
 				order.oriOrder = count;
+				// 对应原图中的坐标
 				bbox.x1 = round((stride*col + 1) / scale);
 				bbox.y1 = round((stride*row + 1) / scale);
 				bbox.x2 = round((stride*col + 1 + cellsize) / scale);
 				bbox.y2 = round((stride*row + 1 + cellsize) / scale);
 				bbox.exist = true;
+				// 在原图中的大小
 				bbox.area = (bbox.x2 - bbox.x1)*(bbox.y2 - bbox.y1);
+				// 当前人脸框的回归坐标
 				for (int channel = 0; channel<4; channel++)
 					bbox.regreCoord[channel] = location.channel(channel)[0];
 				boundingBox_.push_back(bbox);
@@ -112,16 +117,17 @@ void mtcnn::nms(std::vector<Bbox> &boundingBox_, std::vector<orderScore> &bboxSc
 	float maxY = 0;
 	float minX = 0;
 	float minY = 0;
+	// 规则，站上擂台的擂台主，永远都是胜利者
 	while (bboxScore_.size()>0) {
-		order = bboxScore_.back().oriOrder;
-		bboxScore_.pop_back();
-		if (order<0)continue;
-		if (boundingBox_.at(order).exist == false) continue;
+		order = bboxScore_.back().oriOrder; //取得分最高勇士的编号ID
+		bboxScore_.pop_back(); // 勇士出列
+		if (order<0)continue; //死的？下一个！（order在(*it).oriOrder = -1;改变）
+		if (boundingBox_.at(order).exist == false) continue; //记录擂台主ID
 		heros.push_back(order);
-		boundingBox_.at(order).exist = false;//delete it
+		boundingBox_.at(order).exist = false;//当前这个Bbox为擂台主，签订生死簿
 
 		for (int num = 0; num<boundingBox_.size(); num++) {
-			if (boundingBox_.at(num).exist) {
+			if (boundingBox_.at(num).exist) {// 活着的勇士
 				//the iou
 				maxX = (boundingBox_.at(num).x1>boundingBox_.at(order).x1) ? boundingBox_.at(num).x1 : boundingBox_.at(order).x1;
 				maxY = (boundingBox_.at(num).y1>boundingBox_.at(order).y1) ? boundingBox_.at(num).y1 : boundingBox_.at(order).y1;
@@ -138,17 +144,19 @@ void mtcnn::nms(std::vector<Bbox> &boundingBox_, std::vector<orderScore> &bboxSc
 					IOU = IOU / ((boundingBox_.at(num).area<boundingBox_.at(order).area) ? boundingBox_.at(num).area : boundingBox_.at(order).area);
 				}
 				if (IOU>overlap_threshold) {
-					boundingBox_.at(num).exist = false;
+					boundingBox_.at(num).exist = false; //如果该对比框与擂台主的IOU够大，挑战者勇士战死
 					for (vector<orderScore>::iterator it = bboxScore_.begin(); it != bboxScore_.end(); it++) {
 						if ((*it).oriOrder == num) {
-							(*it).oriOrder = -1;
+							(*it).oriOrder = -1;//勇士战死标志
 							break;
 						}
 					}
 				}
+				//那些距离擂台主比较远迎战者幸免于难，将有机会作为擂台主出现
 			}
 		}
 	}
+	//从生死簿上剔除，擂台主活下来了
 	for (int i = 0; i<heros.size(); i++)
 		boundingBox_.at(heros.at(i)).exist = true;
 }
@@ -204,8 +212,11 @@ void mtcnn::detect(ncnn::Mat& img_, std::vector<Bbox>& finalBbox_) {
 	img.substract_mean_normalize(mean_vals, norm_vals);
 
 	float minl = img_w<img_h ? img_w : img_h;
+
+	// 缩放到12为止
 	int MIN_DET_SIZE = 12;
-	int minsize = 90;
+	// 可以检测的最小人脸
+	int minsize = 40;
 	float m = (float)MIN_DET_SIZE / minsize;
 	minl *= m;
 	float factor = 0.709;
@@ -334,7 +345,7 @@ void mtcnn::detect(ncnn::Mat& img_, std::vector<Bbox>& finalBbox_) {
 
 int main()
 {
-	const char* imagepath = "F:\\1.jpg";
+	const char* imagepath = "F:\\3.jpg";
 
 	cv::Mat cv_img = cv::imread(imagepath, CV_LOAD_IMAGE_COLOR);
 	if (cv_img.empty())
@@ -353,6 +364,7 @@ int main()
 		}
 	}
 	imshow("result", cv_img);
+	cv::imwrite("F:\\result.jpg", cv_img);
 	waitKey(0);
 	return 0;
 }
